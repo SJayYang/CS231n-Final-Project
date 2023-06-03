@@ -23,35 +23,25 @@ pipe = pipe.to(device)
 prompt = "big right-sided pleural effusion"
 
 # pipe([prompt], num_inference_steps=75, height=512, width=512, guidance_scale=4)
-image = pipe(prompt).images[0]
+output = pipe(prompt)
+images = output.images
 
-# Step 4: Enable progressive loading (for JPEG)
-image_options = {'progressive': True} if file_format == 'JPEG' else {}
-
-# Step 5: Resize the image if necessary
-max_width = 1000
-
-# Step 6: Save the images
+# Step 3: Save the images
 for i, generated_image in enumerate(generated_images):
-    # Assuming 'generated_image' is a torch.Tensor
+    # Assuming 'generated_image' is a torch.Tensor or numpy.ndarray
 
     # Move the image to the CPU if using GPU
     generated_image = generated_image.cpu()
 
-    # Convert the generated image to a PIL Image object
-    generated_image = transforms.ToPILImage()(generated_image)
+    # Normalize the image tensor to [0, 1] range
+    generated_image = (generated_image + 1) / 2
 
-    # Resize the image if necessary
-    if generated_image.width > max_width:
-        scale_factor = max_width / generated_image.width
-        new_height = int(generated_image.height * scale_factor)
-        generated_image = generated_image.resize((max_width, new_height), Image.LANCZOS)
+    # Convert the tensor to a PIL Image object
+    generated_image = encoders.pil_image(generated_image)
 
-    # Save the image
-    image_name = f'image_{i}.{file_format.lower()}'
+    # Save the image as an individual file
+    image_name = f'image_{i}.png'
     output_path = os.path.join(output_dir, image_name)
-    generated_image.save(output_path, format=file_format, optimize=True, quality=compression_level, **image_options)
-
-    # Optionally display progress or other post-processing steps
+    generated_image.save(output_path)
 
 print("Image generation and saving completed!")
