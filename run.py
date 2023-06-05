@@ -44,7 +44,7 @@ diseases = [ 'Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 
                 'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 
 print("Start inference loop")
-for disease in diseases[:4]: 
+for disease in diseases: 
     prompts =  generate_dataset_prompt(disease, num_data = 10)
     output = pipe(prompts, num_inference_steps=75, height=512, width=512, guidance_scale=4)
     generated_images = output.images

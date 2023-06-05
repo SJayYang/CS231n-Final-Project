@@ -22,8 +22,10 @@ NEW_CKPT_PATH = "/home/ubuntu/CheXNet/new_model.pth.tar"
 N_CLASSES = 14
 CLASS_NAMES = [ 'Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia',
                 'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
-DATA_DIR = '/home/ubuntu/CheXNet/ChestX-ray14/images'
-TEST_IMAGE_LIST = '/home/ubuntu/CheXNet/ChestX-ray14/labels/test_list.txt'
+# DATA_DIR = '/home/ubuntu/CheXNet/ChestX-ray14/images'
+# TEST_IMAGE_LIST = '/home/ubuntu/CheXNet/ChestX-ray14/labels/test_list.txt'
+DATA_DIR = '/home/ubuntu/CS231n-Final-Project/generated_images'
+TEST_IMAGE_LIST = '/home/ubuntu/CS231n-Final-Project/CheXNet_src/generated_images.txt'
 BATCH_SIZE = 8
 
 def replaceLayers(): 

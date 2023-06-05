@@ -25,6 +25,4 @@ with open(file_path, 'a') as file:
         index = diseases.index(condition)
         one_hot[index] = '1'
         string = disease + ' ' + ' '.join(one_hot)
-        print(string)
         file.write(string + '\n')
-        
