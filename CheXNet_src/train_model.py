@@ -13,7 +13,10 @@ import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+from torch.utils.data import random_split
 from read_data import ChestXrayDataSet
+from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
@@ -74,6 +77,16 @@ def main():
                                         transforms.Lambda
                                         (lambda crops: torch.stack([normalize(crop) for crop in crops]))
                                     ]))
+    length = len(train_dataset[0])
+    new_length = int(0.75 * length)
+    total_length = len(train_dataset)
+    train_length = int(0.75 * total_length)
+    valid_length = total_length - train_length
+
+# Split the dataset
+    train_dataset, validation_dataset = random_split(train_dataset, [train_length, valid_length])
+    #validation_dataset = (train_dataset[0][new_length: ], train_dataset[1][new_length: ])
+    #train_dataset = (train_dataset[0][ :new_length], train_dataset[1][ :new_length])
 
     test_dataset = ChestXrayDataSet(data_dir=DATA_DIR_TEST,
                                     image_list_file=TEST_IMAGE_LIST,
@@ -94,25 +107,27 @@ def main():
     pred = torch.FloatTensor()
     pred = pred.cuda()
 
+    train(train_dataset, validation_dataset)
+
     # switch to evaluate mode
-    model.eval()
+    #model.eval()
 
-    train(train_dataset)
+    #train(train_dataset)
 
-    for i, (inp, target) in enumerate(tqdm(test_loader)):
-        target = target.cuda()
-        gt = torch.cat((gt, target), 0)
-        bs, n_crops, c, h, w = inp.size()
-        input_var = torch.autograd.Variable(inp.view(-1, c, h, w).cuda(), volatile=True)
-        output = model(input_var)
-        output_mean = output.view(bs, n_crops, -1).mean(1)
-        pred = torch.cat((pred, output_mean.data), 0)
+    #for i, (inp, target) in enumerate(tqdm(test_loader)):
+    #    target = target.cuda()
+    #    gt = torch.cat((gt, target), 0)
+    #    bs, n_crops, c, h, w = inp.size()
+    #    input_var = torch.autograd.Variable(inp.view(-1, c, h, w).cuda(), volatile=True)
+    #    output = model(input_var)
+    #    output_mean = output.view(bs, n_crops, -1).mean(1)
+    #    pred = torch.cat((pred, output_mean.data), 0)
 
-    AUROCs = compute_AUCs(gt, pred)
-    AUROC_avg = np.array(AUROCs).mean()
-    print('The average AUROC is {AUROC_avg:.3f}'.format(AUROC_avg=AUROC_avg))
-    for i in range(N_CLASSES):
-        print('The AUROC of {} is {}'.format(CLASS_NAMES[i], AUROCs[i]))
+    #AUROCs = compute_AUCs(gt, pred)
+    #AUROC_avg = np.array(AUROCs).mean()
+    #print('The average AUROC is {AUROC_avg:.3f}'.format(AUROC_avg=AUROC_avg))
+    #for i in range(N_CLASSES):
+    #    print('The AUROC of {} is {}'.format(CLASS_NAMES[i], AUROCs[i]))
 
 
 def compute_AUCs(gt, pred):
@@ -156,19 +171,20 @@ class DenseNet121(nn.Module):
         x = self.densenet121(x)
         return x
 
-def train(dataset):
+def train(train_dataset, validation_dataset):
      # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Define hyperparameters
     num_epochs = 1
-    #batch_size = 8
+
 
     # Prepare your dataset and create data loaders
-    train_dataset = dataset
-    #valid_dataset = ...
-    train_loader = DataLoader(dataset=dataset, batch_size=BATCH_SIZE,
+
+    train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE,
                              shuffle=False, num_workers=8, pin_memory=True)
+    val_loader = DataLoader(dataset=validation_dataset, batch_size=BATCH_SIZE,
+                            shuffle=False, num_workers=8, pin_memory=True)
     #valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size)
 
     # Initialize the model
@@ -179,22 +195,23 @@ def train(dataset):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     gt = torch.FloatTensor().to(device)
     pred = torch.FloatTensor().to(device)
+    model.train()
 
     # Training loop
     for epoch in range(num_epochs):
         # Training
-        model.train()
         train_loss = 0.0
-        #total = 0
-        #correct = 0
+        num_batches = 0
 
         for i, (inp, target) in enumerate(tqdm(train_loader)):
+            num_batches += 1
             target = target.to(device)
             gt = torch.cat((gt, target), 0)
             bs, n_crops, c, h, w = inp.size()
+
             with torch.no_grad():
                 input_var = torch.autograd.Variable(inp.view(-1, c, h, w).to(device))
-            #input_var = torch.autograd.Variable(inp.view(-1, c, h, w).to(device), volatile=True)
+
             output = model(input_var)
             output_mean = output.view(bs, n_crops, -1).mean(1)
             pred = torch.cat((pred, output_mean.data), 0)
@@ -208,45 +225,85 @@ def train(dataset):
             optimizer.step()
         
             train_loss += loss.item() * input_var.size(0)
-
-            #predicted_labels = torch.round(output_mean)
-            #correct += (predicted_labels == target).sum().item()
-            #total += target.size(0)
-            #correct += (predicted_labels == target.view_as(predicted_labels)).sum().item()
-            #total += target.size(0) * target.size(1)  # Multiply by n_crops
     
         # Calculate average training loss
-        train_loss = train_loss / len(train_dataset)
+        train_loss = train_loss / num_batches
         print("Train Loss:", train_loss)
+    
+    model.eval()  # Set model to evaluation mode
+
+    gt = torch.FloatTensor().to(device)
+    pred = torch.FloatTensor().to(device)
+    #model.train()
+
+    # Training loop
+    for epoch in range(num_epochs):
+        # Training
+        val_loss = 0.0
+        num_batches = 0
+
+        for i, (inp, target) in enumerate(tqdm(val_loader)):
+            num_batches += 1
+            target = target.to(device)
+            gt = torch.cat((gt, target), 0)
+            bs, n_crops, c, h, w = inp.size()
+
+            with torch.no_grad():
+                input_var = torch.autograd.Variable(inp.view(-1, c, h, w).to(device))
+
+            output = model(input_var)
+            output_mean = output.view(bs, n_crops, -1).mean(1)
+            pred = torch.cat((pred, output_mean.data), 0)
+
+            # Calculate loss
+            loss = nn.MSELoss()(output_mean, target)
+        
+            # Backward pass and optimization
+            #optimizer.zero_grad()
+            #loss.backward()
+            #optimizer.step()
+        
+            val_loss += loss.item() * input_var.size(0)
+
+        val_loss /= num_batches
+    
+    f1_scores = f1_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), average=None)
+    #accuracies = accuracy_score(gt.cpu().numpy(), pred.cpu().numpy())
+    #accuracies = accuracy_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), multioutput='raw_values')
+    # Calculate other metrics if needed
+
+    print("Validation Loss:", val_loss)
+    print("Validation Accuracy:", f1_scores)
+"""
+    gt = torch.FloatTensor().to(device)
+    pred = torch.FloatTensor().to(device)
+    val_loss = 0.0
+
+    with torch.no_grad():
+        for inp, target in tqdm(val_loader):
+            inp = inp.to(device)
+            target = target.to(device)
+            gt = torch.cat((gt, target), 0)
+            bs, n_crops, c, h, w = inp.size()
+            input_var = torch.autograd.Variable(inp.view(-1, c, h, w).to(device))
+            output = model(input_var)
+            output_mean = output.view(bs, n_crops, -1).mean(1)
+            pred = torch.cat((pred, output_mean.data), 0)
+            loss = nn.MSELoss()(output_mean, target)
+            val_loss += loss.item() * input_var[0]
+
+    # Calculate evaluation metrics
+    #mse_loss = nn.MSELoss()(pred, gt).item()
+    f1_scores = f1_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), average=None)
+    #accuracies = accuracy_score(gt.cpu().numpy(), pred.cpu().numpy())
+    #accuracies = accuracy_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), multioutput='raw_values')
+    # Calculate other metrics if needed
+
+    print("Validation Loss:", val_loss)
+    print("Validation Accuracy:", f1_scores)
         #print("Train Accuracy", 100 * correct / total)
-    
-        # Validation
-#        model.eval()
-#        valid_loss = 0.0
-#        correct = 0
-    
-#        with torch.no_grad():
-#            for inputs, labels in valid_loader:
-#                inputs = inputs.to(device)
-#                labels = labels.to(device)
-            
-                # Forward pass
-#                outputs = model(inputs)
-            
-                # Calculate loss
-#                loss = loss_function(outputs, labels)
-#                valid_loss += loss.item() * inputs.size(0)
-            
-                # Calculate accuracy
-#                _, predicted = torch.max(outputs.data, 1)
-#                correct += (predicted == labels).sum().item()
-    
-        # Calculate average validation loss and accuracy
-#        valid_loss = valid_loss / len(valid_dataset)
-#        accuracy = correct / len(valid_dataset)
-    
-        # Print training and validation metrics for each epoch
-#        print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Valid Loss: {valid_loss:.4f}, Accuracy: {accuracy:.4f}')
+"""    
+
 
      
 
