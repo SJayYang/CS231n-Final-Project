@@ -29,6 +29,7 @@ DATA_DIR_TEST = '/home/ubuntu/CheXNet/ChestX-ray14/images'
 TEST_IMAGE_LIST = '/home/ubuntu/CheXNet/ChestX-ray14/labels/test_list.txt'
 DATA_DIR_TRAIN = '/home/ubuntu/CS231n-Final-Project/generated_images'
 TRAIN_IMAGE_LIST = '/home/ubuntu/CS231n-Final-Project/CheXNet_src/generated_images.txt'
+MIXED_TRAIN_LIST = '/home/ubuntu/CS231n-Final-Project/ChestXNet_src/mixed_train.txt'
 BATCH_SIZE = 8
 
 def replaceLayers(): 
@@ -78,15 +79,12 @@ def main():
                                         (lambda crops: torch.stack([normalize(crop) for crop in crops]))
                                     ]))
     length = len(train_dataset[0])
-    new_length = int(0.75 * length)
     total_length = len(train_dataset)
     train_length = int(0.75 * total_length)
     valid_length = total_length - train_length
 
 # Split the dataset
     train_dataset, validation_dataset = random_split(train_dataset, [train_length, valid_length])
-    #validation_dataset = (train_dataset[0][new_length: ], train_dataset[1][new_length: ])
-    #train_dataset = (train_dataset[0][ :new_length], train_dataset[1][ :new_length])
 
     test_dataset = ChestXrayDataSet(data_dir=DATA_DIR_TEST,
                                     image_list_file=TEST_IMAGE_LIST,
@@ -107,27 +105,25 @@ def main():
     pred = torch.FloatTensor()
     pred = pred.cuda()
 
-    train(train_dataset, validation_dataset)
+    train(train_dataset, validation_dataset, model)
 
     # switch to evaluate mode
-    #model.eval()
+    model.eval()
 
-    #train(train_dataset)
+    for i, (inp, target) in enumerate(tqdm(test_loader)):
+        target = target.cuda()
+        gt = torch.cat((gt, target), 0)
+        bs, n_crops, c, h, w = inp.size()
+        input_var = torch.autograd.Variable(inp.view(-1, c, h, w).cuda(), volatile=True)
+        output = model(input_var)
+        output_mean = output.view(bs, n_crops, -1).mean(1)
+        pred = torch.cat((pred, output_mean.data), 0)
 
-    #for i, (inp, target) in enumerate(tqdm(test_loader)):
-    #    target = target.cuda()
-    #    gt = torch.cat((gt, target), 0)
-    #    bs, n_crops, c, h, w = inp.size()
-    #    input_var = torch.autograd.Variable(inp.view(-1, c, h, w).cuda(), volatile=True)
-    #    output = model(input_var)
-    #    output_mean = output.view(bs, n_crops, -1).mean(1)
-    #    pred = torch.cat((pred, output_mean.data), 0)
-
-    #AUROCs = compute_AUCs(gt, pred)
-    #AUROC_avg = np.array(AUROCs).mean()
-    #print('The average AUROC is {AUROC_avg:.3f}'.format(AUROC_avg=AUROC_avg))
-    #for i in range(N_CLASSES):
-    #    print('The AUROC of {} is {}'.format(CLASS_NAMES[i], AUROCs[i]))
+    AUROCs = compute_AUCs(gt, pred)
+    AUROC_avg = np.array(AUROCs).mean()
+    print('The average AUROC is {AUROC_avg:.3f}'.format(AUROC_avg=AUROC_avg))
+    for i in range(N_CLASSES):
+        print('The AUROC of {} is {}'.format(CLASS_NAMES[i], AUROCs[i]))
 
 
 def compute_AUCs(gt, pred):
@@ -171,13 +167,12 @@ class DenseNet121(nn.Module):
         x = self.densenet121(x)
         return x
 
-def train(train_dataset, validation_dataset):
+def train(train_dataset, validation_dataset, model):
      # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Define hyperparameters
-    num_epochs = 1
-
+    num_epochs = 5
 
     # Prepare your dataset and create data loaders
 
@@ -185,11 +180,6 @@ def train(train_dataset, validation_dataset):
                              shuffle=False, num_workers=8, pin_memory=True)
     val_loader = DataLoader(dataset=validation_dataset, batch_size=BATCH_SIZE,
                             shuffle=False, num_workers=8, pin_memory=True)
-    #valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size)
-
-    # Initialize the model
-    model = DenseNet121(N_CLASSES)
-    model = model.to(device)
 
     # Define the optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -230,6 +220,7 @@ def train(train_dataset, validation_dataset):
         train_loss = train_loss / num_batches
         print("Train Loss:", train_loss)
     
+
     model.eval()  # Set model to evaluation mode
 
     gt = torch.FloatTensor().to(device)
@@ -237,35 +228,29 @@ def train(train_dataset, validation_dataset):
     #model.train()
 
     # Training loop
-    for epoch in range(num_epochs):
+    
         # Training
-        val_loss = 0.0
-        num_batches = 0
+    val_loss = 0.0
+    num_batches = 0
 
-        for i, (inp, target) in enumerate(tqdm(val_loader)):
-            num_batches += 1
-            target = target.to(device)
-            gt = torch.cat((gt, target), 0)
-            bs, n_crops, c, h, w = inp.size()
+    for i, (inp, target) in enumerate(tqdm(val_loader)):
+        target = target.to(device)
+        gt = torch.cat((gt, target), 0)
+        bs, n_crops, c, h, w = inp.size()
 
-            with torch.no_grad():
-                input_var = torch.autograd.Variable(inp.view(-1, c, h, w).to(device))
+        with torch.no_grad():
+            input_var = torch.autograd.Variable(inp.view(-1, c, h, w).to(device))
 
-            output = model(input_var)
-            output_mean = output.view(bs, n_crops, -1).mean(1)
-            pred = torch.cat((pred, output_mean.data), 0)
+        output = model(input_var)
+        output_mean = output.view(bs, n_crops, -1).mean(1)
+        pred = torch.cat((pred, output_mean.data), 0)
 
-            # Calculate loss
-            loss = nn.MSELoss()(output_mean, target)
-        
-            # Backward pass and optimization
-            #optimizer.zero_grad()
-            #loss.backward()
-            #optimizer.step()
-        
-            val_loss += loss.item() * input_var.size(0)
+        # Calculate loss
+        loss = nn.MSELoss()(output_mean, target)
+        val_loss += loss.item() * input_var.size(0)
+        num_batches += 1
 
-        val_loss /= num_batches
+    val_loss /= num_batches
     
     f1_scores = f1_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), average=None)
     #accuracies = accuracy_score(gt.cpu().numpy(), pred.cpu().numpy())
