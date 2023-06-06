@@ -19,8 +19,21 @@ from sklearn.metrics import f1_score
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
+import wandb
 
 
+wandb.init(
+    # set the wandb project where this run will be logged
+    project="cs231n_final_project",
+    
+    # track hyperparameters and run metadata
+    config={
+    "learning_rate": 1e-5,
+    "architecture": "CheXNet",
+    "dataset": "generated_real",
+    "epochs": 5,
+    }
+)
 NEW_CKPT_PATH = "/home/ubuntu/CheXNet/new_model.pth.tar"
 N_CLASSES = 14
 CLASS_NAMES = [ 'Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia',
@@ -172,7 +185,7 @@ def train(train_dataset, validation_dataset, model):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Define hyperparameters
-    num_epochs = 5
+    num_epochs = wandb.config.epochs
 
     # Prepare your dataset and create data loaders
 
@@ -182,7 +195,7 @@ def train(train_dataset, validation_dataset, model):
                             shuffle=False, num_workers=8, pin_memory=True)
 
     # Define the optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=wandb.config.learning_rate)
     gt = torch.FloatTensor().to(device)
     pred = torch.FloatTensor().to(device)
     model.train()
@@ -213,11 +226,13 @@ def train(train_dataset, validation_dataset, model):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            wandb.log({'train_loss_individual': loss})
         
             train_loss += loss.item() * input_var.size(0)
     
         # Calculate average training loss
         train_loss = train_loss / num_batches
+        wandb.log({'train_loss_batch': train_loss})
         print("Train Loss:", train_loss)
     
 
@@ -247,11 +262,12 @@ def train(train_dataset, validation_dataset, model):
 
         # Calculate loss
         loss = nn.MSELoss()(output_mean, target)
+        wandb.log({'val_loss_individual': loss})
         val_loss += loss.item() * input_var.size(0)
         num_batches += 1
 
     val_loss /= num_batches
-    
+    wandb.log({'val_loss_batch': train_loss})
     f1_scores = f1_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), average=None)
     #accuracies = accuracy_score(gt.cpu().numpy(), pred.cpu().numpy())
     #accuracies = accuracy_score(gt.cpu().numpy(), torch.round(pred).cpu().numpy(), multioutput='raw_values')
