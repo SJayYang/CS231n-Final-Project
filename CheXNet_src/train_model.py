@@ -50,7 +50,7 @@ args = parse_args()
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="cs231n_final_project_mixed",
+    project="cs231n_final_project",
     name = "cs231n_lr_" + str(args.learning_rate) + "_epochs_" + str(args.epochs) + "_" + args.data_type, 
     
     # track hyperparameters and run metadata
