@@ -20,18 +20,45 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 import wandb
+import argparse
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Simple example of a training script.")
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=1e-4,
+        help="Initial learning rate (after the potential warmup period) to use.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=1,
+        help="Run validation every X epochs.",
+    )
+    parser.add_argument(
+        "--data_type",
+        type=str,
+        default=None,
+        help=("A set of prompts evaluated every `--validation_epochs` and logged to `--report_to`."),
+    )
+    args = parser.parse_args()
+    return args
+
+args = parse_args()
 
 wandb.init(
     # set the wandb project where this run will be logged
-    project="cs231n_final_project",
+    project="cs231n_final_project_mixed",
+    name = "cs231n_lr_" + str(args.learning_rate) + "_epochs_" + str(args.epochs) + "_" + args.data_type, 
     
     # track hyperparameters and run metadata
     config={
-    "learning_rate": 1e-5,
+    "learning_rate": args.learning_rate,
     "architecture": "CheXNet",
-    "dataset": "generated_real",
-    "epochs": 5,
+    "dataset": args.data_type,
+    "epochs": args.epochs,
     }
 )
 NEW_CKPT_PATH = "/home/ubuntu/CheXNet/new_model.pth.tar"
@@ -40,9 +67,12 @@ CLASS_NAMES = [ 'Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass
                 'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
 DATA_DIR_TEST = '/home/ubuntu/CheXNet/ChestX-ray14/images'
 TEST_IMAGE_LIST = '/home/ubuntu/CheXNet/ChestX-ray14/labels/test_list.txt'
-DATA_DIR_TRAIN = '/home/ubuntu/CS231n-Final-Project/generated_images'
-TRAIN_IMAGE_LIST = '/home/ubuntu/CS231n-Final-Project/CheXNet_src/generated_images.txt'
-MIXED_TRAIN_LIST = '/home/ubuntu/CS231n-Final-Project/ChestXNet_src/mixed_train.txt'
+if args.data_type == "generated": 
+    DATA_DIR_TRAIN = '/home/ubuntu/CS231n-Final-Project/generated_images'
+    TRAIN_IMAGE_LIST = '/home/ubuntu/CS231n-Final-Project/CheXNet_src/generated_images.txt'
+elif args.data_type == "mixed":
+    DATA_DIR_TRAIN = '/home/ubuntu/CheXNet/ChestX-ray14/images'
+    TRAIN_IMAGE_LIST = '/home/ubuntu/CS231n-Final-Project/CheXNet_src/mixed_train.txt'
 BATCH_SIZE = 8
 
 def replaceLayers(): 
@@ -135,6 +165,17 @@ def main():
     AUROCs = compute_AUCs(gt, pred)
     AUROC_avg = np.array(AUROCs).mean()
     print('The average AUROC is {AUROC_avg:.3f}'.format(AUROC_avg=AUROC_avg))
+    CLASS_NAMES.append("AVG")
+    AUROCs.append(AUROC_avg)
+    import pandas as pd
+
+    list1 = CLASS_NAMES
+    list2 = AUROCs
+
+    data = {col_name: [row_value] for col_name, row_value in zip(list1, list2)}
+    df = pd.DataFrame(data)
+    my_table = wandb.Table(dataframe=df)
+    wandb.log({"AUROCs": my_table})
     for i in range(N_CLASSES):
         print('The AUROC of {} is {}'.format(CLASS_NAMES[i], AUROCs[i]))
 
